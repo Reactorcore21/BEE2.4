@@ -8,14 +8,14 @@ import shutil
 import os.path
 
 from tk_tools import TK_ROOT
-from srctools.filesys import FileSystem, FileSystemChain
+from srctools.filesys import FileSystemChain
 import utils
 
 LOGGER = utils.getLogger(__name__)
 
 play_sound = True
 
-SAMPLE_WRITE_PATH = utils.conf_location('config/music_sample_temp')
+SAMPLE_WRITE_PATH = utils.conf_location('config/music_sample/temp')
 
 SOUNDS = {
     'select': 'rollover',
@@ -65,6 +65,9 @@ except ImportError:
         """Block fx_blockable() for a short time."""
         pass
 
+    def clean_folder():
+        pass
+
     initiallised = False
     pyglet = avbin = None
     SamplePlayer = None
@@ -109,6 +112,15 @@ else:
         play_sfx_repeat = False
         TK_ROOT.after(50, _reset_fx_blockable)
 
+    def clean_folder():
+        """Delete files used by the sample player."""
+        for file in SAMPLE_WRITE_PATH.parent.iterdir():
+            LOGGER.info('Cleaning up "{}"...', file)
+            try:
+                file.unlink()
+            except (PermissionError, FileNotFoundError):
+                pass
+
     class SamplePlayer:
         """Handles playing a single audio file, and allows toggling it on/off."""
         def __init__(self, start_callback, stop_callback, system: FileSystemChain):
@@ -148,7 +160,7 @@ else:
             # TODO: Pyglet doesn't support direct streams, so we have to
             # TODO: extract sounds to disk first.
             with self.system.get_system(file), file.open_bin() as fsrc, open(
-                SAMPLE_WRITE_PATH.with_suffix(os.path.splitext(self.cur_file)[1]), 'wb',
+                str(SAMPLE_WRITE_PATH) + os.path.splitext(self.cur_file)[1], 'wb',
             ) as fdest:
                 shutil.copyfileobj(fsrc, fdest)
 
