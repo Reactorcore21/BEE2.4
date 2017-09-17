@@ -33,7 +33,8 @@ import helpMenu
 import backup as backup_win
 import tooltip
 
-from typing import Iterable, List
+from typing import Iterable, List, Dict
+
 
 LOGGER = utils.getLogger(__name__)
 
@@ -441,10 +442,11 @@ def quit_application():
     TK_ROOT.quit()
     sys.exit(0)
 
+
 gameMan.quit_application = quit_application
 
 
-def load_palette(data):
+def load_palette(data: List[paletteLoader.Palette]):
     """Import in all defined palettes."""
     global palettes
     palettes = data
@@ -480,7 +482,7 @@ def load_packages(data, package_systems: Iterable[FileSystem]):
 
     StyleVarPane.add_vars(data['StyleVar'], data['Style'])
 
-    # THese item types don't appear anywhere in the UI, so we just save them.
+    # These item types don't appear anywhere in the UI, so we just save them.
     for packlist in data['PackList']:
         pack_lists[packlist.id] = packlist
 
@@ -777,12 +779,58 @@ def refresh_pal_ui():
 
     listbox = UI['palette']  # type: Listbox
     listbox.delete(0, END)
+
+    gear_icons = listbox.gear_icons  # type: Dict[int, Label]
+
+    for gear in gear_icons.values():
+        gear.destroy()
+
+    gear_icons.clear()
+
     for i, pal in enumerate(palettes):
-        listbox.insert(i, pal.name)
-        if pal.prevent_overwrite:
-            listbox.itemconfig(i, foreground='grey', background='white')
+        if pal.settings is not None:
+            listbox.insert(i, '     ' + pal.name)
         else:
-            listbox.itemconfig(i, foreground='black', background='white')
+            listbox.insert(i, pal.name)
+
+        if pal.prevent_overwrite:
+            listbox.itemconfig(
+                i,
+                foreground='grey',
+                background=tk_tools.LISTBOX_BG_COLOR,
+                selectbackground=tk_tools.LISTBOX_BG_SEL_COLOR,
+            )
+        else:
+            listbox.itemconfig(
+                i,
+                foreground='black',
+                background=tk_tools.LISTBOX_BG_COLOR,
+                selectbackground=tk_tools.LISTBOX_BG_SEL_COLOR,
+            )
+
+    listbox.update()
+
+    for i, pal in enumerate(palettes):
+        if pal.settings is not None:
+            gear = Label(
+                listbox,
+                bg='white',
+                image=img.png('icons/gear'),
+                width=10,
+                height=10,
+                borderwidth=0,
+                padx=0,
+                pady=0,
+            )
+            x, y, width, height = listbox.bbox(i)
+            gear_icons[i] = gear
+            gear.place(
+                x=x,
+                y=y + (height-10)//2,
+                width=10,
+                height=10,
+                anchor='nw',
+            )
 
     for ind in range(menus['pal'].index(END), 0, -1):
         # Delete all the old radiobuttons
@@ -1107,6 +1155,14 @@ def set_palette(e=None):
         LOGGER.warning('Invalid palette index!')
         selectedPalette = 0
 
+    # Update gear icons (if any) to match the background of their label.
+    # Do this before palettes update, so you can't see the change.
+    for ind, gear in UI['palette'].gear_icons.items():
+        if ind == selectedPalette:
+            gear['bg'] = tk_tools.LISTBOX_BG_SEL_COLOR
+        else:
+            gear['bg'] = tk_tools.LISTBOX_BG_COLOR
+
     GEN_OPTS['Last_Selected']['palette'] = str(selectedPalette)
     pal_clear()
     menus['pal'].entryconfigure(
@@ -1254,10 +1310,13 @@ def init_palette(f):
     UI['palette'] = Listbox(f, width=10)
     UI['palette'].grid(row=1, sticky="NSEW")
 
+    # Dict to store gear overlays for palettes with settings.
+    UI['palette'].gear_icons = {}
+
     def set_pal_listbox(e=None):
         global selectedPalette
         cur_selection = UI['palette'].curselection()
-        if cur_selection: # Might be blank if none selected
+        if cur_selection:  # Might be blank if none selected
             selectedPalette = int(cur_selection[0])
             selectedPalette_radio.set(selectedPalette)
             set_palette()

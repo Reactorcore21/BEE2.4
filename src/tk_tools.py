@@ -44,6 +44,9 @@ if utils.WIN:
         )
     except (AttributeError, WindowsError, ValueError):
         pass  # It's not too bad if it fails.
+
+    LISTBOX_BG_SEL_COLOR = '#0078D7'
+    LISTBOX_BG_COLOR = 'white'
 elif utils.MAC:
     # Call OS-X's specific api for setting the window icon.
     TK_ROOT.tk.call(
@@ -56,6 +59,9 @@ elif utils.MAC:
 
     def set_window_icon(window: tk.Toplevel):
         """Does nothing."""
+
+    LISTBOX_BG_SEL_COLOR = '#C2DDFF'
+    LISTBOX_BG_COLOR = 'white'
 else:  # Linux
     # Get the tk image object.
     import img
@@ -65,6 +71,9 @@ else:  # Linux
         """Set the window icon."""
         # Weird argument order for default=True...
         window.wm_iconphoto(True, app_icon)
+
+    LISTBOX_BG_SEL_COLOR = 'blue'
+    LISTBOX_BG_COLOR = 'white'
 
 TK_ROOT.withdraw()  # Hide the window until everything is loaded.
 
