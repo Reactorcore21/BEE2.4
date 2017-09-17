@@ -14,6 +14,7 @@ from selectorWin import selWin, Item as selWinItem, AttrDef as SelAttr
 from loadScreen import main_loader as loader
 from srctools.filesys import FileSystem, FileSystemChain
 import sound as snd
+import BEE2_config
 import paletteLoader
 import packageLoader
 import img
@@ -1165,13 +1166,15 @@ def set_palette(e=None):
         else:
             gear['bg'] = tk_tools.LISTBOX_BG_COLOR
 
+    chosen_pal = palettes[selectedPalette]
+
     GEN_OPTS['Last_Selected']['palette'] = str(selectedPalette)
     pal_clear()
     menus['pal'].entryconfigure(
         1,
-        label=_('Delete Palette "{}"').format(palettes[selectedPalette].name),
+        label=_('Delete Palette "{}"').format(chosen_pal.name),
     )
-    for item, sub in palettes[selectedPalette].pos:
+    for item, sub in chosen_pal.pos:
         try:
             item_group = item_list[item]
         except KeyError:
@@ -1191,6 +1194,9 @@ def set_palette(e=None):
             sub,
             is_pre=True,
         ))
+
+    if chosen_pal.settings is not None:
+        BEE2_config.apply_settings(chosen_pal.settings)
 
     if len(palettes) < 2 or palettes[selectedPalette].prevent_overwrite:
         UI['pal_remove'].state(('disabled',))
