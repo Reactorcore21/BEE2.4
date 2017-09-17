@@ -436,6 +436,7 @@ def quit_application():
     # Clean up sounds.
     snd.clean_folder()
 
+    BEE2_config.write_settings()
     GEN_OPTS.save_check()
     item_opts.save_check()
     CompilerPane.COMPILE_CFG.save_check()
@@ -2075,4 +2076,5 @@ def init_windows():
     style_select_callback(style_win.chosen_id)
     set_palette()
     # Set_palette needs to run first, so it can fix invalid palette indexes.
+    BEE2_config.read_settings()
     refresh_pal_ui()
