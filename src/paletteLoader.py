@@ -12,7 +12,7 @@ from typing import List, Tuple
 
 LOGGER = utils.getLogger(__name__)
 
-PAL_DIR = "palettes\\"
+PAL_DIR = utils.conf_location('palettes/')
 
 PAL_EXT = '.bee2_palette'
 
@@ -35,6 +35,7 @@ DEFAULT_PALETTES = {
     # i18n: Aperture Tag's palette
     'APTAG': _('Aperture Tag'),
 }
+
 
 class Palette:
     """A palette, saving an arrangement of items for editoritems.txt"""
@@ -142,15 +143,17 @@ class Palette:
             os.remove(os.path.join(PAL_DIR, self.filename))
 
 
-def load_palettes(pal_dir):
+def load_palettes():
     """Scan and read in all palettes in the specified directory."""
-    global PAL_DIR
-    PAL_DIR = os.path.abspath(os.path.join('..', pal_dir))
-    full_dir = os.path.join(os.getcwd(), PAL_DIR)
 
-    for name in os.listdir(full_dir):  # this is both files and dirs
+    # Load our builtin palettes:
+    for name in os.listdir('../palettes/'):
+        LOGGER.info('Loading builtin "{}"', name)
+        pal_list.append(Palette.parse(os.path.join('../palettes/', name)))
+
+    for name in os.listdir(PAL_DIR):  # this is both files and dirs
         LOGGER.info('Loading "{}"', name)
-        path = os.path.join(full_dir, name)
+        path = os.path.join(PAL_DIR, name)
         pos_file, prop_file = None, None
         try:
             if name.endswith(PAL_EXT):
