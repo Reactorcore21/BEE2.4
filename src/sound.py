@@ -15,7 +15,7 @@ LOGGER = utils.getLogger(__name__)
 
 play_sound = True
 
-SAMPLE_WRITE_PATH = '../config/music_sample_temp'
+SAMPLE_WRITE_PATH = utils.conf_location('config/music_sample_temp')
 
 SOUNDS = {
     'select': 'rollover',
@@ -148,7 +148,7 @@ else:
             # TODO: Pyglet doesn't support direct streams, so we have to
             # TODO: extract sounds to disk first.
             with self.system.get_system(file), file.open_bin() as fsrc, open(
-                SAMPLE_WRITE_PATH + os.path.splitext(self.cur_file)[1], 'wb',
+                SAMPLE_WRITE_PATH.with_suffix(os.path.splitext(self.cur_file)[1]), 'wb',
             ) as fdest:
                 shutil.copyfileobj(fsrc, fdest)
 
