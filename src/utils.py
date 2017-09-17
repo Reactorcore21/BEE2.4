@@ -435,7 +435,20 @@ class FuncLookup(collections.abc.Mapping):
         return self._registry == dict(other.items())
 
     def __iter__(self):
+        """Yield all the functions."""
         yield from self.values()
+
+    def keys(self):
+        """Yield all the valid IDs."""
+        return self._registry.keys()
+
+    def values(self):
+        """Yield all the functions."""
+        return self._registry.values()
+
+    def items(self):
+        """Return pairs of (ID, func)."""
+        return self._registry.items()
 
     def __len__(self):
         return len(set(self._registry.values()))
