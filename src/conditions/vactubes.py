@@ -1,5 +1,6 @@
-"""Implements the cutomisable vactube items.
+"""Implements the customisable vactube items.
 """
+from enum import Enum
 from collections import namedtuple
 
 import connections
@@ -19,6 +20,15 @@ from srctools import (
 COND_MOD_NAME = None
 
 LOGGER = srctools.logger.get_logger(__name__, alias='cond.vactubes')
+
+
+class TubeType(Enum):
+    """Type of tube each set is."""
+    AIR = 'air'    # Pneumatic Diversity Vent, with suction
+    GEL = 'gel'    # Gel piping (with/without visible bits)
+    CUBE = 'cube'  # Dispenses a single cube.
+    DECO = 'deco'  # Sealed tube with random decorations.
+
 
 PUSH_SPEED = 700  # The speed of the push triggers.
 UP_PUSH_SPEED = 900  # Make it slightly faster when up to counteract gravity
