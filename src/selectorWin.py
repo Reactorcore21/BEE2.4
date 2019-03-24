@@ -630,7 +630,7 @@ class selWin:
             self.samp_button = samp_button = ttk.Button(
                 name_frame,
                 text=BTN_PLAY,
-                width=1,
+                width=2,
             )
             samp_button.grid(row=0, column=1)
             add_tooltip(
@@ -1056,6 +1056,9 @@ class selWin:
 
     def sel_item_id(self, it_id):
         """Select the item with the given ID."""
+        if self.selected.name == it_id:
+            return True
+
         if it_id == '<NONE>':
             self.sel_item(self.noneItem)
             self.set_disp()

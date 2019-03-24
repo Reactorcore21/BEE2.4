@@ -34,7 +34,7 @@ ALLOW_MID_VOICES = False
 vmf_file = None  # type: VMF
 
 # The prefix for all voiceline instances.
-INST_PREFIX = 'instances/BEE2/voice/'
+INST_PREFIX = 'instances/bee2/voice/'
 
 # The location of the responses script.
 RESP_LOC = 'bee2/inject/response_data.nut'
@@ -67,7 +67,7 @@ def generate_resp_script(file, allow_dings):
     """Write the responses section into a file."""
     use_dings = allow_dings
 
-    config = ConfigFile('resp_voice.cfg', root='bee2')
+    config = ConfigFile('bee2/resp_voice.cfg', in_conf_folder=False)
     file.write("BEE2_RESPONSES <- {\n")
     for section in QUOTE_DATA.find_key('CoopResponses', []):
         if not section.has_children() and section.name == 'use_dings':
@@ -421,6 +421,11 @@ def sort_func(quote: PossibleQuote):
         return Decimal(0)
 
 
+def get_studio_loc() -> Vec:
+    """Return the location of the voice studio."""
+    return Vec.from_str(QUOTE_DATA['quote_loc', '-10000 0 0'], x=-10000)
+
+
 def add_voice(
         has_items: dict,
         style_vars_: dict,
@@ -436,11 +441,11 @@ def add_voice(
     map_attr = has_items
     style_vars = style_vars_
 
-    norm_config = ConfigFile('voice.cfg', root='bee2')
-    mid_config = ConfigFile('mid_voice.cfg', root='bee2')
+    norm_config = ConfigFile('bee2/voice.cfg', in_conf_folder=False)
+    mid_config = ConfigFile('bee2/mid_voice.cfg', in_conf_folder=False)
 
     quote_base = QUOTE_DATA['base', False]
-    quote_loc = Vec.from_str(QUOTE_DATA['quote_loc', '-10000 0 0'], x=-10000)
+    quote_loc = get_studio_loc()
     if quote_base:
         LOGGER.info('Adding Base instance!')
         vmf_file.create_ent(
@@ -453,7 +458,7 @@ def add_voice(
         )
 
     # Either box in with nodraw, or place the voiceline studio.
-    has_studio = conditions.monitor.make_voice_studio(vmf_file, quote_loc)
+    has_studio = conditions.monitor.make_voice_studio(vmf_file)
 
     bullsye_actor = vbsp_options.get(str, 'voice_studio_actor')
     if bullsye_actor and has_studio:

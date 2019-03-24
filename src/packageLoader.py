@@ -181,9 +181,6 @@ class _PakObjectMeta(type):
         type.__init__(cls, name, bases, namespace)
 
 
-T = TypeVar('T')
-
-
 class PakObject(metaclass=_PakObjectMeta):
     """PackObject(allow_mult=False, has_img=True): The base class for package objects.
 
@@ -408,7 +405,7 @@ def load_packages(
         ) -> Tuple[dict, Iterable[FileSystem]]:
     """Scan and read in all packages."""
     global LOG_ENT_COUNT, CHECK_PACKFILE_CORRECTNESS
-    pak_dir = os.path.abspath(os.path.join(os.getcwd(), '..', pak_dir))
+    pak_dir = os.path.abspath(pak_dir)
 
     if not os.path.isdir(pak_dir):
         no_packages_err(pak_dir, 'The given packages directory is not present!')
@@ -653,7 +650,11 @@ def setup_style_tree(
                 for sty_id, conf in to_change:
                     if conf.style:
                         try:
-                            start_data = styles[conf.style]
+                            if ':' in conf.style:
+                                ver_id, base_style_id = conf.style.split(':', 1)
+                                start_data = item.versions[ver_id]['styles'][base_style_id]
+                            else:
+                                start_data = styles[conf.style]
                         except KeyError:
                             raise ValueError(
                                 'Item {}\'s {} style referenced '
@@ -751,30 +752,6 @@ def setup_style_tree(
                         item.isolate_versions or vers['isolate']
                         else item.def_ver['styles'][sty_id]
                     )
-
-    if utils.DEV_MODE:
-        # Check for outdated connections.
-        with open('../dev/item_conn.md', 'w') as f:
-            for item in sorted(item_data, key=lambda i: i.id):
-                imp = {}
-                for vers in item.versions.values():
-                    variants = {}  # type: Dict[int, Tuple[str, Property]]
-                    for sty_id, variant in vers['styles'].items():
-                        if id(variant.editor) not in variants:
-                            variants[id(variant.editor)] = sty_id, variant.editor
-
-                    for sty_id, editor in variants.values():
-                        for io_block in editor.find_all('Exporting', 'Inputs'):
-                            if 'CONNECTION_STANDARD' in io_block:
-                                imp[sty_id] = False
-                                break
-                            elif 'BEE2' in io_block:
-                                imp[sty_id] = True
-
-                if imp:
-                    f.write('\t* `<{}>`:\n'.format(item.id))
-                    for sty_id, has_imp in sorted(imp.items()):
-                        f.write('\t\t* [{}] `{}`\n'.format('x' if has_imp else ' ', sty_id))
 
 
 def parse_item_folder(
@@ -1049,11 +1026,11 @@ class ItemVariant:
             all_icon=self.all_icon,
             source='{} from {}'.format(source, self.source),
         )
-        variant._modify_editoritems(props, variant.editor, source)
+        variant._modify_editoritems(props, Property('', [variant.editor]), source)
         if 'Item' in variant.editor_extra and 'extra' in props:
             variant._modify_editoritems(
                 props.find_key('extra'),
-                variant.editor_extra.find_key('Item'),
+                variant.editor_extra,
                 source,
             )
 
@@ -1068,7 +1045,7 @@ class ItemVariant:
         """Modify either the base or extra editoritems block."""
         is_extra = editor is self.editor_extra
 
-        subtypes = list(editor.find_all('Editor', 'SubType'))
+        subtypes = list(editor.find_all('Item', 'Editor', 'SubType'))
 
         # Implement overriding palette items
         for item in props.find_children('Palette'):
@@ -1099,22 +1076,17 @@ class ItemVariant:
                     'editoritems for {}'.format(item.name, source)
                 )
 
-            # Overriding model data
-            try:
-                try:
-                    model_prop = item.find_key('Models')
-                except NoKeyError:
-                    model_prop = item.find_key('Model')
-            except NoKeyError:
-                pass
-            else:
+            # Overriding model data.
+            models = []
+            for prop in item:
+                if prop.name in ('models', 'model'):
+                    if prop.has_children():
+                        models.extend([subprop.value for subprop in prop])
+                    else:
+                        models.append(prop.value)
+            if models:
                 while 'model' in subtype:
                     del subtype['model']
-                if model_prop.has_children():
-                    models = [prop.value for prop in model_prop]
-                else:
-                    # Special case - one model, for the entire subtype.
-                    models = [model_prop.value]
                 for model in models:
                     subtype.append(Property('Model', [
                         Property('ModelName', model),
@@ -1139,8 +1111,10 @@ class ItemVariant:
                 if pal_icon:
                     palette['Image'] = pal_icon
 
-        # Allow overriding the instance blocks.
-        instances = editor.ensure_exists('Exporting').ensure_exists('Instances')
+        # Allow overriding the instance blocks, only for the first in extras.
+        exporting = editor.find_key('Item').ensure_exists('Exporting')
+
+        instances = exporting.ensure_exists('Instances')
         inst_children = {
             self._inst_block_key(prop): prop
             for prop in
@@ -1166,7 +1140,7 @@ class ItemVariant:
 
         # Override IO commands.
         if 'IOConf' in props:
-            for io_block in editor.find_children('Exporting'):
+            for io_block in exporting:
                 if io_block.name not in ('outputs', 'inputs'):
                     continue
                 while 'bee2' in io_block:
@@ -1174,7 +1148,7 @@ class ItemVariant:
 
             io_conf = props.find_key('IOConf')
             io_conf.name = 'BEE2'
-            editor.ensure_exists('Exporting').ensure_exists('Inputs').append(io_conf)
+            exporting.ensure_exists('Inputs').append(io_conf)
 
     @staticmethod
     def _inst_block_key(prop: Property):
@@ -1264,7 +1238,7 @@ class Style(PakObject):
         suggested=None,
         has_video=True,
         vpk_name='',
-        corridors: Property=None,
+        corridors: Dict[Tuple[str, int], CorrDesc]=None,
     ):
         self.id = style_id
         self.selitem_data = selitem_data
@@ -1276,7 +1250,15 @@ class Style(PakObject):
         self.suggested = suggested or {}
         self.has_video = has_video
         self.vpk_name = vpk_name
-        self.corridors = corridors or Property('Corridor', [])
+        self.corridors = {}
+
+        for group, length in CORRIDOR_COUNTS.items():
+            for i in range(1, length + 1):
+                try:
+                    self.corridors[group, i] = corridors[group, i]
+                except KeyError:
+                    self.corridors[group, i] = CorrDesc('', '', '')
+
         if config is None:
             self.config = Property(None, [])
         else:
@@ -1327,8 +1309,8 @@ class Style(PakObject):
                 if icon_folder:
                     icon = '{}/{}/{}.jpg'.format(icon_folder, group, i)
                     # If this doesn't actually exist, don't use this.
-                    if 'resources/BEE2/corr/' + icon not in data.fsys:
-                        LOGGER.debug('No "resources/BEE2/{}"!', icon)
+                    if 'resources/bee2/corr/' + icon not in data.fsys:
+                        LOGGER.debug('No "resources/bee2/{}"!', icon)
                         icon = ''
                 else:
                     icon = ''
@@ -1378,8 +1360,7 @@ class Style(PakObject):
             vpk_name=vpk_name,
         )
 
-
-    def add_over(self, override: 'Style'):
+    def add_over(self, override: 'Style') -> None:
         """Add the additional commands to ourselves."""
         self.editor.append(override.editor)
         self.config.append(override.config)
@@ -2394,6 +2375,9 @@ class Music(PakObject):
         """Check if this track or its children has a channel."""
         if self.sound[channel]:
              return True
+        if channel is MusicChannel.BASE and self.inst:
+            # The instance provides the base track.
+            return True
         try:
             children = Music.by_id(self.children[channel])
         except KeyError:
@@ -2471,6 +2455,10 @@ class Music(PakObject):
                 ('Options', 'music_sync_tbeam'),
                 srctools.bool_as_int(base_music.has_synced_tbeam),
             )
+            vbsp_config.set_key(
+                ('Options', 'music_instance'),
+                base_music.inst or '',
+            )
 
         # If we need to pack, add the files to be unconditionally
         # packed.
@@ -2525,14 +2513,14 @@ class Music(PakObject):
 
 class StyleVar(PakObject, allow_mult=True, has_img=False):
     def __init__(
-            self,
-            var_id,
-            name,
-            styles,
-            unstyled=False,
-            default=False,
-            desc='',
-            ):
+        self,
+        var_id: str,
+        name: str,
+        styles: List[str],
+        unstyled: bool=False,
+        default: bool=False,
+        desc: str='',
+    ):
         self.id = var_id
         self.name = name
         self.default = default
@@ -2544,7 +2532,7 @@ class StyleVar(PakObject, allow_mult=True, has_img=False):
             self.styles = styles
 
     @classmethod
-    def parse(cls, data: 'ParseData'):
+    def parse(cls, data: 'ParseData') -> 'StyleVar':
         """Parse StyleVars from configs."""
         name = data.info['name', '']
 
@@ -2569,7 +2557,7 @@ class StyleVar(PakObject, allow_mult=True, has_img=False):
             desc=desc,
         )
 
-    def add_over(self, override):
+    def add_over(self, override: 'StyleVar') -> None:
         """Override a stylevar to add more compatible styles."""
         # Setting it to be unstyled overrides any other values!
         if self.styles is None:
@@ -2592,16 +2580,16 @@ class StyleVar(PakObject, allow_mult=True, has_img=False):
             else:
                 self.desc = override.desc
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '<Stylevar "{}", name="{}", default={}, styles={}>:\n{}'.format(
             self.id,
             self.name,
             self.default,
-            ','.join(self.styles),
+            self.styles,
             self.desc,
         )
 
-    def applies_to_style(self, style):
+    def applies_to_style(self, style: Style) -> bool:
         """Check to see if this will apply for the given style.
 
         """
@@ -2617,18 +2605,18 @@ class StyleVar(PakObject, allow_mult=True, has_img=False):
             style.bases
         )
 
-    def applies_to_all(self):
+    def applies_to_all(self) -> bool:
         """Check if this applies to all styles."""
         if self.styles is None:
             return True
 
-        for style in Style.all():  # type: Style
+        for style in Style.all():
             if not self.applies_to_style(style):
                 return False
         return True
 
     @staticmethod
-    def export(exp_data: ExportData):
+    def export(exp_data: ExportData) -> None:
         """Export style var selections into the config.
 
         The .selected attribute is a dict mapping ids to the boolean value.
@@ -2648,7 +2636,7 @@ class StyleVPK(PakObject, has_img=False):
     These are copied into _dlc3, allowing changing the in-editor wall
     textures.
     """
-    def __init__(self, vpk_id, filesys: FileSystem, directory: str):
+    def __init__(self, vpk_id, filesys: FileSystem, directory: str) -> None:
         """Initialise a StyleVPK object."""
         self.id = vpk_id
         self.fsys = filesys
@@ -2782,12 +2770,12 @@ class Elevator(PakObject):
     This is mainly defined just for Valve's items - you can't pack BIKs.
     """
     def __init__(
-            self,
-            elev_id,
-            selitem_data: 'SelitemData',
-            video,
-            vert_video=None,
-            ):
+        self,
+        elev_id,
+        selitem_data: 'SelitemData',
+        video,
+        vert_video=None,
+    ) -> None:
         self.id = elev_id
 
         self.selitem_data = selitem_data
@@ -2802,7 +2790,7 @@ class Elevator(PakObject):
             self.vert_video = vert_video
 
     @classmethod
-    def parse(cls, data):
+    def parse(cls, data: ParseData) -> 'Elevator':
         """Read elevator videos from the package."""
         info = data.info
         selitem_data = get_selitem_data(info)
@@ -2821,11 +2809,11 @@ class Elevator(PakObject):
             vert_video,
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '<Elevator ' + self.id + '>'
 
     @staticmethod
-    def export(exp_data: ExportData):
+    def export(exp_data: ExportData) -> None:
         """Export the chosen video into the configs."""
         style = exp_data.selected_style  # type: Style
         vbsp_config = exp_data.vbsp_conf  # type: Property
@@ -2877,12 +2865,12 @@ class Elevator(PakObject):
 
 class PackList(PakObject, allow_mult=True, has_img=False):
     """Specifies a group of resources which can be packed together."""
-    def __init__(self, pak_id, files) -> None:
+    def __init__(self, pak_id: str, files: List[str]) -> None:
         self.id = pak_id
         self.files = files
 
     @classmethod
-    def parse(cls, data: ParseData):
+    def parse(cls, data: ParseData) -> 'PackList':
         """Read pack lists from packages."""
         filesystem = data.fsys  # type: FileSystem
         conf = data.info.find_key('Config', '')
@@ -2955,7 +2943,7 @@ class PackList(PakObject, allow_mult=True, has_img=False):
                 self.files.append(item)
 
     @staticmethod
-    def export(exp_data: ExportData):
+    def export(exp_data: ExportData) -> None:
         """Export all the packlists."""
 
         pack_block = Property('PackList', [])
@@ -2992,13 +2980,13 @@ class EditorSound(PakObject, has_img=False):
     The ID is the name of the sound, prefixed with 'BEE2_Editor.'.
     The values in 'keys' will form the soundscript body.
     """
-    def __init__(self, snd_name, data):
+    def __init__(self, snd_name: str, data: Property) -> None:
         self.id = 'BEE2_Editor.' + snd_name
         self.data = data
         data.name = self.id
 
     @classmethod
-    def parse(cls, data):
+    def parse(cls, data: ParseData) -> 'EditorSound':
         """Parse editor sounds from the package."""
         return cls(
             snd_name=data.id,

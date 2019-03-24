@@ -14,13 +14,16 @@ import sys
 from datetime import datetime
 from io import BytesIO, StringIO
 from zipfile import ZipFile
-from typing import Iterator, List, Tuple
+from typing import Iterator, List, Tuple, Set
 
 import srctools
 import utils
-from srctools import Property
+from srctools import Property, Vec
 from srctools.bsp import BSP, BSP_LUMPS
-from srctools.filesys import RawFileSystem, VPKFileSystem, ZipFileSystem
+from srctools.filesys import (
+    RawFileSystem, VPKFileSystem, ZipFileSystem,
+    FileSystem,
+)
 from srctools.packlist import PackList, FileType as PackType, load_fgd
 from srctools.game import find_gameinfo
 from srctools.bsp_transform import run_transformations
@@ -55,7 +58,7 @@ SOUND_MAN_FOLDER = {
 # They are all found in bee2/inject/.
 INJECT_FILES = {
     # Defines choreo lines used on coop death, taunts, etc.
-    'response_data.nut': 'scripts/vscripts/BEE2/coop_response_data.nut',
+    'response_data.nut': 'scripts/vscripts/bee2/coop_response_data.nut',
 
     # The list of soundscripts that the game loads.
     'soundscript_manifest.txt': 'scripts/game_sounds_manifest.txt',
@@ -70,13 +73,13 @@ INJECT_FILES = {
     'auto_run.nut': 'scripts/vscripts/bee2/auto_run.nut',
 
     # Commands for monitor items.
-    'monitor_args.nut': 'scripts/vscripts/BEE2/mon_camera_args.nut',
+    'monitor_args.nut': 'scripts/vscripts/bee2/mon_camera_args.nut',
 
     # Script for setting model types on cubes.
-    'cube_setmodel.nut': 'scripts/vscripts/BEE2/cube_setmodel.nut',
+    'cube_setmodel.nut': 'scripts/vscripts/bee2/cube_setmodel.nut',
 
     # Plays the tick-tock timer sound.
-    'timer_sound.nut': 'scripts/vscripts/BEE2/timer_sound.nut',
+    'timer_sound.nut': 'scripts/vscripts/bee2/timer_sound.nut',
 }
 
 # Additional parts to add if we have a mdl file.
@@ -368,7 +371,7 @@ def generate_music_script(data: Property, pack_list: PackList) -> bytes:
     sync_funnel = data.bool('sync_funnel')
 
     if 'base' not in data:
-        base = Property('base', 'BEE2/silent_lp.wav')
+        base = Property('base', 'bee2/silent_lp.wav')
         # Don't sync to a 2-second sound.
         sync_funnel = False
     else:
@@ -572,7 +575,7 @@ def mod_screenshots() -> None:
             # Clean up this folder - otherwise users will get thousands of
             # pics in there!
             for screen in screens:
-                if screen != scr_loc:
+                if screen != scr_loc and os.path.isfile(screen):
                     os.remove(screen)
             LOGGER.info('Done!')
     else:
@@ -794,8 +797,8 @@ def main(argv: List[str]) -> None:
         packlist.write_manifest(os.path.basename(path)[:-4])
 
     # We need to disallow Valve folders.
-    pack_whitelist = set()
-    pack_blacklist = set()
+    pack_whitelist = set()  # type: Set[FileSystem]
+    pack_blacklist = set()  # type: Set[FileSystem]
     if is_peti:
         pack_blacklist |= {
             RawFileSystem(root_folder / 'portal2_dlc2'),
@@ -804,10 +807,10 @@ def main(argv: List[str]) -> None:
             RawFileSystem(root_folder / 'platform'),
             RawFileSystem(root_folder / 'update'),
         }
-        pack_whitelist.add(fsys_mel)
-        pack_whitelist.add(fsys_tag)
-        # If those weren't present, we added a None.
-        pack_whitelist.discard(None)
+        if fsys_mel is not None:
+            pack_whitelist.add(fsys_mel)
+        if fsys_tag is not None:
+            pack_whitelist.add(fsys_tag)
 
     if '-no_pack' not in args:
         # Cubemap files packed into the map already.

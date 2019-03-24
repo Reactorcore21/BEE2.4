@@ -588,6 +588,15 @@ class Item:
         self.ind_panels.clear()
         self.shape_signs.clear()
 
+    def transfer_antlines(self, item: 'Item'):
+        """Transfer the antlines and checkmarks from this item to another."""
+        item.antlines.update(self.antlines)
+        item.ind_panels.update(self.ind_panels)
+        item.shape_signs.extend(self.shape_signs)
+
+        self.antlines.clear()
+        self.ind_panels.clear()
+        self.shape_signs.clear()
 
 class Connection:
     """Represents a connection between two items."""
@@ -742,6 +751,11 @@ def calc_connections(
             else:
                 # Pass in the defaults for antline styles.
                 ITEMS[inst_name] = Item(inst, item_type, antline_floor, antline_wall)
+
+                # Strip off the original connection count variables, these are
+                # invalid.
+                if item_type.input_type is InputType.DUAL:
+                    del inst.fixup[const.FixupVars.CONN_COUNT]
 
     for over in vmf.by_class['info_overlay']:
         name = over['targetname']
@@ -1022,36 +1036,33 @@ def gen_item_outputs(vmf: VMF):
 
         # Special case - inverted spawnfire items with no inputs need to fire
         # off the activation outputs. There's no way to then deactivate those.
-        if not item.inputs:
-            if item.item_type.spawn_fire is FeatureMode.ALWAYS:
-                if item.is_logic:
-                    # Logic gates need to trigger their outputs.
-                    # Make a logic_auto temporarily for this to collect the
-                    # outputs we need.
+        if not item.inputs and item.item_type.spawn_fire is FeatureMode.ALWAYS:
+            if item.is_logic:
+                # Logic gates need to trigger their outputs.
+                # Make a logic_auto temporarily for this to collect the
+                # outputs we need.
 
-                    item.inst.clear_keys()
-                    item.inst['classname'] = 'logic_auto'
+                item.inst.clear_keys()
+                item.inst['classname'] = 'logic_auto'
 
-                    auto_logic.append(item.inst)
-                else:
-                    for cmd in item.enable_cmd:
-                        logic_auto.add_out(
-                            Output(
-                                'OnMapSpawn',
-                                conditions.local_name(
-                                    item.inst,
-                                    conditions.resolve_value(item.inst, cmd.target),
-                                ) or item.inst,
-                                conditions.resolve_value(item.inst, cmd.input),
-                                conditions.resolve_value(item.inst, cmd.params),
-                                delay=cmd.delay,
-                                only_once=True,
-                            )
+                auto_logic.append(item.inst)
+            else:
+                for cmd in item.enable_cmd:
+                    logic_auto.add_out(
+                        Output(
+                            'OnMapSpawn',
+                            conditions.local_name(
+                                item.inst,
+                                conditions.resolve_value(item.inst, cmd.target),
+                            ) or item.inst,
+                            conditions.resolve_value(item.inst, cmd.input),
+                            conditions.resolve_value(item.inst, cmd.params),
+                            delay=cmd.delay,
+                            only_once=True,
                         )
-            continue
+                    )
 
         if item.item_type.input_type is InputType.DUAL:
-
             prim_inputs = [
                 conn
                 for conn in item.inputs
@@ -1110,7 +1121,7 @@ def gen_item_outputs(vmf: VMF):
     if has_timer_relay:
         # Write this VScript out.
         timer_sound = vbsp_options.get(str, 'timer_sound')
-        with open('BEE2/inject/timer_sound.nut', 'w') as f:
+        with open('bee2/inject/timer_sound.nut', 'w') as f:
             f.write(TIMER_SOUND_SCRIPT.format(snd=timer_sound))
 
         # Make sure this is packed, since parsing the VScript isn't trivial.
@@ -1192,7 +1203,7 @@ def add_timer_relay(item: Item, has_sounds:bool):
     )
 
     if has_sounds:
-        relay['vscripts'] = 'BEE2/timer_sound.nut'
+        relay['vscripts'] = 'bee2/timer_sound.nut'
 
     if item.item_type.timer_sound_pos:
         relay_loc = item.item_type.timer_sound_pos.copy()
@@ -1264,6 +1275,9 @@ def add_item_inputs(
 ):
     """Handle either the primary or secondary inputs to an item."""
     item.inst.fixup[count_var] = len(inputs)
+
+    if len(inputs) == 0:
+        return  # The rest of this function requires at least one input.
 
     if logic_type is InputType.DEFAULT:
         # 'Original' PeTI proxies.
@@ -1358,32 +1372,33 @@ def add_item_inputs(
     if is_inverted:
         enable_cmd, disable_cmd = disable_cmd, enable_cmd
 
-        # Inverted outputs get a short amount of lag, so loops will propagate
+        # Inverted logic items get a short amount of lag, so loops will propagate
         # over several frames so we don't lock up.
-        enable_cmd = [
-            Output(
-                '',
-                out.target,
-                out.input,
-                out.params,
-                out.delay + 0.1,
-                times=out.times,
-                inst_in=out.inst_in,
-            )
-            for out in enable_cmd
-        ]
-        disable_cmd = [
-            Output(
-                '',
-                out.target,
-                out.input,
-                out.params,
-                out.delay + 0.1,
-                times=out.times,
-                inst_in=out.inst_in,
-            )
-            for out in disable_cmd
-        ]
+        if item.inputs and item.outputs:
+            enable_cmd = [
+                Output(
+                    '',
+                    out.target,
+                    out.input,
+                    out.params,
+                    out.delay + 0.01,
+                    times=out.times,
+                    inst_in=out.inst_in,
+                )
+                for out in enable_cmd
+            ]
+            disable_cmd = [
+                Output(
+                    '',
+                    out.target,
+                    out.input,
+                    out.params,
+                    out.delay + 0.01,
+                    times=out.times,
+                    inst_in=out.inst_in,
+                )
+                for out in disable_cmd
+            ]
 
     needs_counter = len(inputs) > 1
 

@@ -41,6 +41,10 @@ Icon
 .Spotlight-V100
 .Trashes
 
+# MyPy
+.mypy_cache
+
+
 # Portal 2 stuff
 *.vmx
 *.log
@@ -79,3 +83,7 @@ logs/
 
 # Localisation files:
 *.mo
+
+
+# PyInstaller temporary file directory
+/build_tmp/

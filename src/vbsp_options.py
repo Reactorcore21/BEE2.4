@@ -15,7 +15,7 @@ LOGGER = srctools.logger.get_logger(__name__)
 SETTINGS = {}
 
 # Overwritten by VBSP to get the actual values.
-ITEM_CONFIG = ConfigFile('', root='', auto_load=False)
+ITEM_CONFIG = ConfigFile(None)
 
 
 class TYPE(Enum):
@@ -520,7 +520,7 @@ DEFAULTS = [
         """),
 
     # Instance used for pti_ents
-    Opt('global_pti_ents', "instances/BEE2/global_pti_ents.vmf",
+    Opt('global_pti_ents', "instances/bee2/global_pti_ents.vmf",
         """The instance used for `global_pti_ents`.
 
         This shouldn't need to be changed.

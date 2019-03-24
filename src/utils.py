@@ -1,18 +1,20 @@
 """Various functions shared among the compiler and application."""
-import collections.abc
+import collections
 import functools
 import logging
 import os
 import stat
 import shutil
 import sys
+from pathlib import Path
 from enum import Enum
 
 from typing import (
     Tuple, List, Set, Sequence,
-    Iterator, Iterable, SupportsInt,
+    Iterator, Iterable, SupportsInt, Mapping,
     TypeVar, Any,
     Union, Callable, Generator,
+    KeysView, ValuesView, ItemsView,
 )
 
 try:
@@ -23,7 +25,7 @@ except ImportError:  # py < 3.6.5
 
 try:
     # This module is generated when cx_freeze compiles the app.
-    from BUILD_CONSTANTS import BEE_VERSION
+    from BUILD_CONSTANTS import BEE_VERSION  # type: ignore
 except ImportError:
     # We're running from source!
     BEE_VERSION = "(dev)"
@@ -62,6 +64,53 @@ STEAM_IDS = {
     # 247120: Sixense
     # 211480: 'In Motion'
 }
+
+# Appropriate locations to store config options for each OS.
+if WIN:
+    _SETTINGS_ROOT = Path(os.environ['APPDATA'])
+elif MAC:
+    _SETTINGS_ROOT = Path('~/Library/Preferences/').expanduser()
+elif LINUX:
+    _SETTINGS_ROOT = Path('~/.config').expanduser()
+else:
+    # Defer the error until used, so it goes in logs and whatnot.
+    # Utils is early, so it'll get lost in stderr.
+    _SETTINGS_ROOT = None
+    
+# We always go in a BEE2 subfolder
+if _SETTINGS_ROOT:
+    _SETTINGS_ROOT /= 'BEEMOD2'
+
+
+def install_path(path: str) -> Path:
+    """Return the path to a file inside our installation folder."""
+    if FROZEN:
+        # This special attribute is set by PyInstaller to our folder.
+        return Path(sys._MEIPASS) / path
+    else:
+        # We're running from src/, so data is in the folder above that.
+        return (Path('../') / path).resolve()
+
+
+def conf_location(path: str) -> Path:
+    """Return the full path to save settings to.
+    
+    The passed-in path is relative to the settings folder.
+    Any additional subfolders will be created if necessary.
+    If it ends with a '/' or '\', it is treated as a folder.
+    """
+    if _SETTINGS_ROOT is None:
+        raise FileNotFoundError("Don't know a good config directory!")
+
+    loc = _SETTINGS_ROOT / path
+    
+    if path.endswith(('\\', '/')) and not loc.suffix:
+        folder = loc
+    else:
+        folder = loc.parent
+    # Create folders if needed.
+    folder.mkdir(parents=True, exist_ok=True)
+    return loc
 
 
 def fix_cur_directory() -> None:
@@ -356,7 +405,7 @@ del N, S, E, W
 RetT = TypeVar('RetT')
 
 
-class FuncLookup(collections.abc.Mapping):
+class FuncLookup(Mapping[str, Callable[..., Any]]):
     """A dict for holding callback functions.
 
     Functions are added by using this as a decorator. Positional arguments
@@ -400,12 +449,25 @@ class FuncLookup(collections.abc.Mapping):
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, FuncLookup):
             return self._registry == other._registry
-        if not isinstance(other, collections.abc.Mapping):
+        if not isinstance(other, collections.Mapping):
             return NotImplemented
         return self._registry == dict(other.items())
 
     def __iter__(self) -> Iterator[Callable[..., Any]]:
-        yield from self.values()
+        """Yield all the functions."""
+        return iter(self.values())
+
+    def keys(self) -> KeysView[str]:
+        """Yield all the valid IDs."""
+        return self._registry.keys()
+
+    def values(self) -> ValuesView[Callable[..., Any]]:
+        """Yield all the functions."""
+        return self._registry.values()
+
+    def items(self) -> ItemsView[str, Callable[..., Any]]:
+        """Return pairs of (ID, func)."""
+        return self._registry.items()
 
     def __len__(self) -> int:
         return len(set(self._registry.values()))
@@ -454,8 +516,6 @@ class FuncLookup(collections.abc.Mapping):
     def functions(self) -> Set[Callable[..., Any]]:
         """Return the set of functions in this mapping."""
         return set(self._registry.values())
-
-    values = functions
 
     def clear(self) -> None:
         """Delete all functions."""
@@ -702,13 +762,15 @@ def setup_localisations(logger: logging.Logger) -> None:
     for lang in expanded_langs:
         PROP_FLAGS_DEFAULT['lang_' + lang] = True
 
+    lang_folder = install_path('i18n')
+
     for lang in expanded_langs:
         try:
-            file = open('../i18n/{}.mo'.format(lang), 'rb')
+            file = open(lang_folder / (lang + '.mo').format(lang), 'rb')
         except FileNotFoundError:
             continue
         with file:
-            trans = gettext.GNUTranslations(file)
+            trans = gettext.GNUTranslations(file)  # type: gettext.NullTranslations
             break
     else:
         # No translations, fallback to English.

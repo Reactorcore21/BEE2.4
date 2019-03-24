@@ -6,7 +6,7 @@ from typing import Union, Callable
 
 from tkinter import ttk
 from tkinter import font as _tk_font
-from tkinter import filedialog
+from tkinter import filedialog, commondialog
 import tkinter as tk
 
 import os.path
@@ -28,13 +28,15 @@ TK_ROOT = tk.Tk()
 
 # Set icons for the application.
 
+ICO_PATH = str(utils.install_path('BEE2.ico'))
+
 if utils.WIN:
     # Ensure everything has our icon (including dialogs)
-    TK_ROOT.wm_iconbitmap(default='../BEE2.ico')
+    TK_ROOT.wm_iconbitmap(default=ICO_PATH)
 
-    def set_window_icon(window: tk.Toplevel):
+    def set_window_icon(window: Union[tk.Toplevel, tk.Tk]):
         """Set the window icon."""
-        window.wm_iconbitmap('../BEE2.ico')
+        window.wm_iconbitmap(ICO_PATH)
 
     import ctypes
     # Use Windows APIs to tell the taskbar to group us as our own program,
@@ -46,6 +48,9 @@ if utils.WIN:
         )
     except (AttributeError, WindowsError, ValueError):
         pass  # It's not too bad if it fails.
+
+    LISTBOX_BG_SEL_COLOR = '#0078D7'
+    LISTBOX_BG_COLOR = 'white'
 elif utils.MAC:
     def set_window_icon(window: Union[tk.Toplevel, tk.Tk]):
         """ Call OS-X's specific api for setting the window icon."""
@@ -55,19 +60,25 @@ elif utils.MAC:
             256,  # largest size in the .ico
             256,
             '-imageFile',
-            '../bee2.ico',
+            ICO_PATH,
         )
         
     set_window_icon(TK_ROOT)
+    
+    LISTBOX_BG_SEL_COLOR = '#C2DDFF'
+    LISTBOX_BG_COLOR = 'white'
 else:  # Linux
     # Get the tk image object.
     import img
-    app_icon = img.get_app_icon()
+    app_icon = img.get_app_icon(ICO_PATH)
 
-    def set_window_icon(window: tk.Toplevel):
+    def set_window_icon(window: Union[tk.Toplevel, tk.Tk]):
         """Set the window icon."""
         # Weird argument order for default=True...
         window.wm_iconphoto(True, app_icon)
+
+    LISTBOX_BG_SEL_COLOR = 'blue'
+    LISTBOX_BG_COLOR = 'white'
 
 TK_ROOT.withdraw()  # Hide the window until everything is loaded.
 
@@ -247,7 +258,7 @@ class FileField(ttk.Frame):
         is_dir: bool=False,
         loc: str='',
         callback: Callable[[str], None]=None,
-    ):
+    ) -> None:
         """Initialise the field.
 
         - Set is_dir to true to look for directories, instead of files.
@@ -267,15 +278,17 @@ class FileField(ttk.Frame):
             self.browser = filedialog.Directory(
                 self,
                 initialdir=loc,
-            )
+            )  # type: commondialog.Dialog
         else:
             self.browser = filedialog.SaveAs(
                 self,
                 initialdir=loc,
             )
 
-        if callback is not None:
-            self.callback = callback
+        if callback is None:
+            callback = self._nop_callback
+
+        self.callback = callback
 
         self.textbox = ReadOnlyEntry(
             self,
@@ -300,24 +313,24 @@ class FileField(ttk.Frame):
 
         self._text_var.set(self._truncate(loc))
 
-    def browse(self, event=None):
+    def browse(self, event: tk.Event=None) -> None:
         """Browse for a file."""
         path = self.browser.show()
         if path:
             self.value = path
 
-    def callback(self, path):
+    @staticmethod  # No need to bind to a method.
+    def _nop_callback(path: str) -> None:
         """Callback function, called whenever the value changes."""
-        # When passed in, this is shadowed by the user's function.
         pass
 
     @property
-    def value(self):
+    def value(self) -> str:
         """Get the current path."""
         return self._location
 
     @value.setter
-    def value(self, path):
+    def value(self, path: str) -> None:
         """Set the current path. This calls the callback function."""
         import tooltip
         self.callback(path)
@@ -325,7 +338,7 @@ class FileField(ttk.Frame):
         tooltip.set_tooltip(self, path)
         self._text_var.set(self._truncate(path))
 
-    def _truncate(self, path):
+    def _truncate(self, path: str) -> str:
         """Truncate the path to the end portion."""
         self.textbox.update_idletasks()
         wid = (self.textbox.winfo_width() // _file_field_char_len) - 3
@@ -341,6 +354,6 @@ class FileField(ttk.Frame):
         else:
             return path
 
-    def _text_configure(self, e):
+    def _text_configure(self, e: tk.Event) -> None:
         """Truncate text every time the text widget resizes."""
         self._text_var.set(self._truncate(self._location))

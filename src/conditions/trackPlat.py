@@ -1,12 +1,14 @@
 """Conditions relating to track platforms."""
+from typing import Set, Dict, Tuple
+
 import conditions
 import srctools.logger
-import vbsp
 from conditions import (
     make_result, RES_EXHAUSTED,
 )
 import instanceLocs
-from srctools import Vec, Property, Entity
+from srctools import Vec, Property, Entity, VMF
+
 
 COND_MOD_NAME = 'Track Platforms'
 
@@ -15,25 +17,28 @@ LOGGER = srctools.logger.get_logger(__name__, alias='cond.trackPlat')
 
 
 @make_result('trackPlatform')
-def res_track_plat(res: Property):
+def res_track_plat(vmf: VMF, res: Property):
     """Logic specific to Track Platforms.
 
     This allows switching the instances used depending on if the track
     is horizontal or vertical and sets the track
-    targetnames to a useful value.
+    targetnames to a useful value. This should be run unconditionally, not
+    once per item.
     Values:
     
-    * `orig_item`: The "<ITEM_ID>" for the track platform, with angle brackets. This is used to determine all the instance filenames.
-    * `single_plat`: An instance used for the entire platform, if it's one rail long (and therefore can't move). 
-    * `track_name`: If set, rename track instances following the pattern `plat_name-track_nameXX`. Otherwise all tracks will receive the name of the platform.
-    * `vert_suffix`: If set, add `_vert` suffixes to vertical track instance names.
-    * `horiz_suffix`: Add suffixes to horizontal tracks
-            (_horiz, _horiz_mirrored)
-    * `plat_suffix`: If set, also add the above `_vert` or `_horiz` suffixes 
+    * `orig_item`: The "<ITEM_ID>" for the track platform, with angle brackets.
+      This is used to determine all the instance filenames.
+    * `single_plat`: An instance used for the entire platform, if it's
+      one rail long (and therefore can't move).
+    * `track_name`: If set, rename track instances following the pattern
+      `plat_name-track_nameXX`. Otherwise all tracks will receive the name
+      of the platform.
+    * `plat_suffix`: If set, add a `_vert` or `_horiz` suffix
       to the platform.
-    * `vert_bottom_suffix`: If set, add '_bottom' / '_vert_bottom' to the track at the
-            bottom of vertical platforms.
-    * `plat_var`: If set, save the orientation (`vert`/`horiz`) to the provided $fixup variable.
+    * `plat_var`: If set, save the orientation (`vert`/`horiz`) to the
+      provided $fixup variable.
+    * `track_var`: If set, save `N`, `S`, `E`, or `W` to the provided $fixup
+      variable to indicate the relative direction the top faces.
     """
     # Get the instances from editoritems
     (
@@ -50,7 +55,7 @@ def res_track_plat(res: Property):
     track_instances = {
         Vec.from_str(inst['origin']).as_tuple(): inst
         for inst in
-        vbsp.VMF.by_class['func_instance']
+        vmf.by_class['func_instance']
         if inst['file'].casefold() in track_files
     }
 
@@ -66,7 +71,7 @@ def res_track_plat(res: Property):
 
     # Now we loop through all platforms in the map, and then locate their
     # track_set
-    for plat_inst in vbsp.VMF.by_class['func_instance']:
+    for plat_inst in vmf.by_class['func_instance']:
         if plat_inst['file'].casefold() not in platforms:
             continue  # Not a platform!
 
@@ -99,7 +104,7 @@ def res_track_plat(res: Property):
             first_track.remove()
             continue  # Next platform
 
-        track_set = set()
+        track_set = set()  # type: Set[Entity]
         if track_type == inst_top or track_type == inst_middle:
             # search left
             track_scan(
@@ -132,68 +137,56 @@ def res_track_plat(res: Property):
 
         # Now figure out which way the track faces:
 
-        # The direction horizontal track is offset
-        side_dir = Vec(0, 1, 0).rotate_by_str(first_track['angles'])
-
         # The direction of the platform surface
         facing = Vec(-1, 0, 0).rotate_by_str(plat_inst['angles'])
-        if side_dir == facing:
-            track_facing = 'HORIZ'
-        elif side_dir == -facing:
-            track_facing = 'HORIZ_MIRR'
+
+        # The direction horizontal track is offset
+        uaxis = Vec(x=1).rotate_by_str(first_track['angles'])
+        vaxis = Vec(y=1).rotate_by_str(first_track['angles'])
+
+        if uaxis == facing:
+            plat_facing = 'vert'
+            track_facing = 'E'
+        elif uaxis == -facing:
+            plat_facing = 'vert'
+            track_facing = 'W'
+        elif vaxis == facing:
+            plat_facing = 'horiz'
+            track_facing = 'N'
+        elif vaxis == -facing:
+            plat_facing = 'horiz'
+            track_facing = 'S'
         else:
-            track_facing = 'VERT'
-        # Now add the suffixes
-        if track_facing == 'VERT':
-            if srctools.conv_bool(res['vert_suffix', '']):
-                for inst in track_set:
-                    conditions.add_suffix(inst, '_vert')
-                if srctools.conv_bool(res['plat_suffix', '']):
-                    conditions.add_suffix(plat_inst, '_vert')
-            if srctools.conv_bool(res['vert_bottom_suffix', '']):
-                # We want to find the bottom/top track which is facing the
-                # same direction as the platform.
-                track_dirs = {
-                    inst_top: Vec(-1, 0, 0),
-                    inst_bottom: Vec(1, 0, 0)
-                }
-                for inst in track_set:
-                    try:
-                        norm_off = track_dirs[inst['file'].casefold()]
-                    except KeyError:
-                        continue
+            raise ValueError('Facing {} is not U({}) or V({})!'.format(
+                facing,
+                uaxis,
+                vaxis,
+            ))
 
-                    if norm_off.rotate_by_str(inst['angles']) == facing:
-                        conditions.add_suffix(inst, '_bottom')
-
-        elif track_facing == 'HORIZ_MIRR':
-            if srctools.conv_bool(res['horiz_suffix', '']):
-                for inst in track_set:
-                    conditions.add_suffix(inst, '_horiz_mirrored')
-                if srctools.conv_bool(res['plat_suffix', '']):
-                    conditions.add_suffix(plat_inst, '_horiz')
-        else:  # == 'HORIZ'
-            if srctools.conv_bool(res['horiz_suffix', '']):
-                for inst in track_set:
-                    conditions.add_suffix(inst, '_horiz')
-                if srctools.conv_bool(res['plat_suffix', '']):
-                    conditions.add_suffix(plat_inst, '_horiz')
+        if res.bool('plat_suffix'):
+            conditions.add_suffix(plat_inst, '_' + plat_facing)
 
         plat_var = res['plat_var', '']
-        if plat_var != '':
-            # Skip the '_mirrored' section if needed
-            plat_inst.fixup[plat_var] = track_facing[:5].lower()
+        if plat_var:
+            plat_inst.fixup[plat_var] = plat_facing
 
-    return RES_EXHAUSTED # Don't re-run
+        track_var = res['track_var', '']
+        if track_var:
+            plat_inst.fixup[track_var] = track_facing
+
+        for track in track_set:
+            track.fixup.update(plat_inst.fixup)
+
+    return RES_EXHAUSTED  # Don't re-run
 
 
 def track_scan(
-        tr_set,
-        track_inst,
-        start_track: Entity,
-        middle_file: str,
-        x_dir: int,
-        ):
+    tr_set: Set[Entity],
+    track_inst: Dict[Tuple[float, float, float], Entity],
+    start_track: Entity,
+    middle_file: str,
+    x_dir: int,
+):
     """Build a set of track instances extending from a point.
     :param track_inst: A dictionary mapping origins to track instances
     :param start_track: The instance we start on

@@ -6,6 +6,7 @@ If PyGame fails to load, all fx() calls will fail silently.
 """
 import shutil
 import os
+import utils
 
 from tk_tools import TK_ROOT
 from srctools.filesys import RawFileSystem, FileSystemChain
@@ -23,7 +24,7 @@ LOGGER = srctools.logger.get_logger(__name__)
 
 play_sound = True
 
-SAMPLE_WRITE_PATH = '../config/music_sample_temp'
+SAMPLE_WRITE_PATH = utils.conf_location('config/music_sample/temp')
 
 # This starts holding the filenames, but then caches the actual sound object.
 SOUNDS = {
@@ -54,7 +55,7 @@ try:
     pyglet_version = pyglet.version
     avbin_version = avbin.get_version()
 except ImportError:
-    LOGGER.warning('ERROR:SOUNDS NOT INITIALISED!')
+    LOGGER.warning('ERROR:SOUNDS NOT INITIALISED!', exc_info=True)
 
     pyglet_version = avbin_version = '(Not installed)'
 
@@ -76,6 +77,9 @@ except ImportError:
 
     def block_fx():
         """Block fx_blockable() for a short time."""
+
+    def clean_folder():
+        pass
 
     initiallised = False
     pyglet = avbin = None  # type: ignore
@@ -99,18 +103,18 @@ else:
         if type(sound) is str:
             LOGGER.info('Loading sound "{}" -> sounds/{}.ogg', name, sound)
             sound = SOUNDS[name] = pyglet.media.load(
-                f'../sounds/{sound}.ogg',
+                str(utils.install_path('sounds/{}.ogg'.format(sound))),
                 streaming=False,
             )
         sound.play()
 
 
-    def _reset_fx_blockable():
+    def _reset_fx_blockable() -> None:
         """Reset the fx_norep() call after a delay."""
         global _play_repeat_sfx
         _play_repeat_sfx = True
 
-    def fx_blockable(sound):
+    def fx_blockable(sound: str) -> None:
         """Play a sound effect.
 
         This waits for a certain amount of time between retriggering sounds
@@ -127,6 +131,15 @@ else:
         global _play_repeat_sfx
         _play_repeat_sfx = False
         TK_ROOT.after(50, _reset_fx_blockable)
+
+    def clean_folder():
+        """Delete files used by the sample player."""
+        for file in SAMPLE_WRITE_PATH.parent.iterdir():
+            LOGGER.info('Cleaning up "{}"...', file)
+            try:
+                file.unlink()
+            except (PermissionError, FileNotFoundError):
+                pass
 
     class SamplePlayer:
         """Handles playing a single audio file, and allows toggling it on/off."""
@@ -175,13 +188,12 @@ else:
                 # Special case, it's directly lying on the disk -
                 # We can just pass that along.
                 disk_filename = os.path.join(fsystem.path, file.path)
+                LOGGER.info('Directly playing sample "{}"...', disk_filename)
             else:
                 # In a filesystem, we need to extract it.
                 # SAMPLE_WRITE_PATH + the appropriate extension.
-                disk_filename = (
-                    SAMPLE_WRITE_PATH +
-                    os.path.splitext(self.cur_file)[1]
-                )
+                disk_filename = str(SAMPLE_WRITE_PATH.with_suffix(os.path.splitext(self.cur_file)[1]))
+                LOGGER.info('Extracting music sample to "{}"...', disk_filename)
                 with self.system.get_system(file), file.open_bin() as fsrc:
                     with open(disk_filename, 'wb') as fdest:
                         shutil.copyfileobj(fsrc, fdest)

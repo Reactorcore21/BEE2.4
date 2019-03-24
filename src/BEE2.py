@@ -8,7 +8,10 @@ utils.fix_cur_directory()
 # We need to initialise logging as early as possible - that way
 # it can record any errors in the initialisation of modules.
 import tk_tools
-LOGGER = srctools.logger.init_logging('../logs/BEE2.log', on_error=tk_tools.on_error)
+LOGGER = srctools.logger.init_logging(
+    str(utils.install_path('logs/BEE2.log')),
+    on_error=tk_tools.on_error,
+)
 
 utils.setup_localisations(LOGGER)
 
@@ -28,7 +31,6 @@ import music_conf
 
 DEFAULT_SETTINGS = {
     'Directories': {
-        'palette': 'palettes/',
         'package': 'packages/',
     },
     'General': {
@@ -108,7 +110,7 @@ UI.load_packages(pack_data)
 LOGGER.info('Done!')
 
 LOGGER.info('Loading Palettes...')
-paletteLoader.load_palettes(GEN_OPTS['Directories']['palette'])
+paletteLoader.load_palettes()
 LOGGER.info('Done!')
 
 # Check games for Portal 2's basemodui.txt file, so we can translate items.
